@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<title>LZ4 File Decompressor</title>
+<link rel="stylesheet" href="css.css">
+</head>
+<body>
+<div class="container">
+<h1>LZ4 File Decompressor</h1>
+<div class="app-layout">
+<div class="left-panel">
+<div class="drop-zone" id="dropZone">
+<div class="drop-text">Drop LZ4 file here</div>
+</div>
+<div class="loading" id="loading">Decompressing...</div>
+<div class="file-list" id="fileList"></div>
+</div>
+<div class="right-panel">
+<div class="preview-container" id="previewContainer"></div>
+</div>
+</div>
+</div>
+<script src="lz4/wasm.js"></script>
+<script src="lz4/lz4asm.js"></script>
+<script src="lz4/lz4wasm.js"></script>
+<script src="lz4.js?v=7.1"></script>
+<script src="array-buffer-utils.js?v=7.1"></script>
+<script src="project-compression.js?v=7.1"></script>
+<script src="script.js"></script>
+</body>
+</html>
