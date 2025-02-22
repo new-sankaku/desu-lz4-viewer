@@ -50,23 +50,15 @@ function getMimeType(fileName) {
    return 'application/octet-stream';
  }
 }
+
 function formatJSON(str) {
-  console.log('formatJSON input:', str);
   try {
-    // 入力文字列から余分なクォートとエスケープを削除
     let cleanStr = str;
     if (str.startsWith('"') && str.endsWith('"')) {
       cleanStr = str.slice(1, -1).replace(/\\"/g, '"');
     }
-    console.log('Cleaned string:', cleanStr);
-    
     const obj = JSON.parse(cleanStr);
-    console.log('Parsed object:', obj);
-    
-    // 整形してプレビュー用のHTMLを生成
     const formatted = JSON.stringify(obj, null, 2);
-    console.log('Formatted JSON:', formatted);
-    
     return `<pre class="json-content">${formatted}</pre>`;
   } catch(e) {
     console.error('JSON parse error:', e);
@@ -83,7 +75,6 @@ async function displayFileContent(file) {
   previewContainer.style.display = 'block';
  } else if(file.name.endsWith('.json')) {
   const textContent = new TextDecoder().decode(file.data);
-  console.log('JSON content:', textContent);
   previewContainer.innerHTML = formatJSON(textContent);
   previewContainer.style.display = 'block';
  } else if(isTextFile(file.name)) {
@@ -199,6 +190,26 @@ async function createFileStructure(files, container, level = 0) {
  }
 }
 
+async function collectAllFiles(files, basePath = '') {
+  const allFiles = [];
+  for(const file of files) {
+    const currentPath = basePath ? `${basePath}/${file.name}` : file.name;
+    if(file.name.endsWith('.lz4')) {
+      try {
+        const innerFiles = await processLz4File(file.data);
+        const nestedFiles = await collectAllFiles(innerFiles, currentPath.replace('.lz4', ''));
+        allFiles.push(...nestedFiles);
+      } catch(error) {
+        console.error('Error processing LZ4 file:', error);
+        allFiles.push({ path: currentPath, data: file.data });
+      }
+    } else {
+      allFiles.push({ path: currentPath, data: file.data });
+    }
+  }
+  return allFiles;
+}
+
 dropZone.addEventListener('drop', async(e) => {
  e.preventDefault();
  dropZone.classList.remove('dragover');
@@ -214,38 +225,34 @@ dropZone.addEventListener('drop', async(e) => {
   const initialFiles = await lz4Compressor.unLz4Files(blob);
 
   fileList.innerHTML = '';
-  const allFiles = [];
-
-  async function collectAllFiles(files) {
-   for(const file of files) {
-    if(file.name.endsWith('.lz4')) {
-     try {
-      const innerFiles = await processLz4File(file.data);
-      await collectAllFiles(innerFiles);
-     } catch(error) {
-      allFiles.push(file);
-     }
-    } else {
-     allFiles.push(file);
-    }
-   }
-  }
-
-  await collectAllFiles(initialFiles);
+  const allFiles = await collectAllFiles(initialFiles);
 
   const downloadAllBtn = document.createElement('button');
   downloadAllBtn.className = 'btn btn-download-all';
-  downloadAllBtn.textContent = 'Download All Files';
-  downloadAllBtn.onclick = () => {
-   allFiles.forEach(file => {
-    const blob = new Blob([file.data]);
+  downloadAllBtn.textContent = 'Download as ZIP';
+  downloadAllBtn.onclick = async () => {
+   loading.classList.add('active');
+   try {
+    const zip = new JSZip();
+    
+    allFiles.forEach(file => {
+     zip.file(file.path, file.data);
+    });
+    
+    const blob = await zip.generateAsync({type: "blob"});
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = file.name;
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    a.download = `decompressed_files_${timestamp}.zip`;
     a.click();
     URL.revokeObjectURL(url);
-   });
+   } catch(error) {
+    console.error('Error creating ZIP:', error);
+    alert('Error creating ZIP file');
+   } finally {
+    loading.classList.remove('active');
+   }
   };
 
   fileList.appendChild(downloadAllBtn);
