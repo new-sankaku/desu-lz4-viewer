@@ -69,7 +69,25 @@ function formatJSON(str) {
 async function displayFileContent(file) {
  if(isImageFile(file.name)) {
   const mimeType = getMimeType(file.name);
-  const blob = new Blob([file.data], {type: mimeType});
+
+  // Check if data is Base64 Data URL
+  const dataStart = new TextDecoder().decode(file.data.slice(0, 30));
+  const isBase64 = dataStart.startsWith('data:image/');
+
+  let blob;
+  if (isBase64) {
+   const base64Data = new TextDecoder().decode(file.data);
+   const base64Content = base64Data.split(',')[1];
+   const binaryString = atob(base64Content);
+   const uint8Array = new Uint8Array(binaryString.length);
+   for (let i = 0; i < binaryString.length; i++) {
+    uint8Array[i] = binaryString.charCodeAt(i);
+   }
+   blob = new Blob([uint8Array], {type: mimeType});
+  } else {
+   blob = new Blob([file.data], {type: mimeType});
+  }
+
   const url = URL.createObjectURL(blob);
   previewContainer.innerHTML = `<img src="${url}" class="file-preview" alt="${file.name}">`;
   previewContainer.style.display = 'block';
