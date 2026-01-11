@@ -262,3 +262,26 @@ body{
   .text-icon{
   background-color:#805ad5;
   }
+  .binary-preview{
+  width:100%;
+  }
+  .binary-header{
+  color:#e53e3e;
+  font-size:13px;
+  margin-bottom:8px;
+  font-weight:500;
+  }
+  .binary-content{
+  font-family:'Monaco','Menlo','Ubuntu Mono','Consolas',monospace;
+  font-size:11px;
+  line-height:1.5;
+  background:#1a1a2e;
+  color:#00ff88;
+  padding:12px;
+  border-radius:4px;
+  overflow-x:auto;
+  white-space:pre;
+  text-align:left;
+  max-height:400px;
+  overflow-y:auto;
+  }

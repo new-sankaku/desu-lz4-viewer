@@ -18,7 +18,7 @@ dropZone.addEventListener('dragleave', () => {
 });
 
 function isImageFile(fileName) {
- return /\.(jpg|jpeg|png|gif|bmp|webp)$/i.test(fileName)
+ return /\.(jpg|jpeg|png|gif|bmp|webp|img)$/i.test(fileName)
 }
 
 function isTextFile(fileName) {
@@ -51,6 +51,33 @@ function getMimeType(fileName) {
  }
 }
 
+function detectImageMimeType(data) {
+ const bytes = new Uint8Array(data.slice(0, 12));
+
+ // PNG: 89 50 4E 47 0D 0A 1A 0A
+ if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4E && bytes[3] === 0x47) {
+  return 'image/png';
+ }
+ // JPEG: FF D8 FF
+ if (bytes[0] === 0xFF && bytes[1] === 0xD8 && bytes[2] === 0xFF) {
+  return 'image/jpeg';
+ }
+ // GIF: 47 49 46 38
+ if (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x38) {
+  return 'image/gif';
+ }
+ // BMP: 42 4D
+ if (bytes[0] === 0x42 && bytes[1] === 0x4D) {
+  return 'image/bmp';
+ }
+ // WebP: 52 49 46 46 ... 57 45 42 50
+ if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46 &&
+     bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50) {
+  return 'image/webp';
+ }
+ return null;
+}
+
 function formatJSON(str) {
   try {
     let cleanStr = str;
@@ -66,16 +93,64 @@ function formatJSON(str) {
   }
 }
 
+function formatBinaryDump(data, maxBytes = 1024) {
+ const bytes = new Uint8Array(data);
+ const displayBytes = Math.min(bytes.length, maxBytes);
+ let hexLines = [];
+ let asciiLines = [];
+
+ for (let i = 0; i < displayBytes; i += 16) {
+  const hexPart = [];
+  const asciiPart = [];
+
+  for (let j = 0; j < 16; j++) {
+   if (i + j < displayBytes) {
+    const byte = bytes[i + j];
+    hexPart.push(byte.toString(16).padStart(2, '0'));
+    asciiPart.push(byte >= 32 && byte <= 126 ? String.fromCharCode(byte) : '.');
+   } else {
+    hexPart.push('  ');
+    asciiPart.push(' ');
+   }
+  }
+
+  const offset = i.toString(16).padStart(8, '0');
+  hexLines.push(`${offset}  ${hexPart.slice(0, 8).join(' ')}  ${hexPart.slice(8).join(' ')}  |${asciiPart.join('')}|`);
+ }
+
+ let result = hexLines.join('\n');
+ if (bytes.length > maxBytes) {
+  result += `\n\n... (${bytes.length - maxBytes} more bytes, total: ${bytes.length} bytes)`;
+ }
+ return result;
+}
+
 async function displayFileContent(file) {
+ console.log('[displayFileContent] Called with file:', file.name);
+ console.log('[displayFileContent] file.data type:', typeof file.data, file.data?.constructor?.name);
+ console.log('[displayFileContent] file.data length:', file.data?.length || file.data?.byteLength);
+
  if(isImageFile(file.name)) {
-  const mimeType = getMimeType(file.name);
+  console.log('[displayFileContent] isImageFile = true');
+  const isImgFile = file.name.toLowerCase().endsWith('.img');
+  console.log('[displayFileContent] isImgFile:', isImgFile);
 
   // Check if data is Base64 Data URL
-  const dataStart = new TextDecoder().decode(file.data.slice(0, 30));
+  let dataStart = '';
+  try {
+   dataStart = new TextDecoder().decode(file.data.slice(0, 30));
+   console.log('[displayFileContent] dataStart:', dataStart);
+  } catch(e) {
+   console.error('[displayFileContent] Error decoding dataStart:', e);
+  }
   const isBase64 = dataStart.startsWith('data:image/');
+  console.log('[displayFileContent] isBase64:', isBase64);
 
-  let blob;
+  let imageData = file.data;
+  let mimeType;
+
   if (isBase64) {
+   console.log('[displayFileContent] Processing as Base64');
    const base64Data = new TextDecoder().decode(file.data);
    const base64Content = base64Data.split(',')[1];
    const binaryString = atob(base64Content);
@@ -83,22 +158,66 @@ async function displayFileContent(file) {
    for (let i = 0; i < binaryString.length; i++) {
     uint8Array[i] = binaryString.charCodeAt(i);
    }
-   blob = new Blob([uint8Array], {type: mimeType});
+   imageData = uint8Array;
+   mimeType = getMimeType(file.name);
+  } else if (isImgFile) {
+   console.log('[displayFileContent] Processing as .img file');
+   // For .img files, detect MIME type from magic bytes
+   mimeType = detectImageMimeType(file.data);
+   console.log('[displayFileContent] Detected mimeType:', mimeType);
+   if (!mimeType) {
+    // Not a recognized image format, show binary dump
+    console.log('[displayFileContent] No mimeType detected, showing binary dump');
+    const binaryDump = formatBinaryDump(file.data);
+    previewContainer.innerHTML = `<div class="binary-preview"><div class="binary-header">Not a recognized image format. Showing binary dump:</div><pre class="binary-content">${binaryDump}</pre></div>`;
+    previewContainer.style.display = 'block';
+    console.log('[displayFileContent] Binary dump displayed');
+    return;
+   }
   } else {
-   blob = new Blob([file.data], {type: mimeType});
+   mimeType = getMimeType(file.name);
+   console.log('[displayFileContent] Using extension mimeType:', mimeType);
   }
 
+  console.log('[displayFileContent] Creating blob with mimeType:', mimeType);
+  const blob = new Blob([imageData], {type: mimeType});
   const url = URL.createObjectURL(blob);
-  previewContainer.innerHTML = `<img src="${url}" class="file-preview" alt="${file.name}">`;
-  previewContainer.style.display = 'block';
+  console.log('[displayFileContent] Blob URL created:', url);
+
+  if (isImgFile) {
+   console.log('[displayFileContent] Loading image for .img file');
+   // For .img files, try to display as image with fallback to binary dump
+   const img = new Image();
+   img.onload = () => {
+    console.log('[displayFileContent] Image loaded successfully');
+    previewContainer.innerHTML = `<img src="${url}" class="file-preview" alt="${file.name}">`;
+    previewContainer.style.display = 'block';
+   };
+   img.onerror = (e) => {
+    console.error('[displayFileContent] Image load error:', e);
+    URL.revokeObjectURL(url);
+    const binaryDump = formatBinaryDump(file.data);
+    previewContainer.innerHTML = `<div class="binary-preview"><div class="binary-header">Failed to display as image. Showing binary dump:</div><pre class="binary-content">${binaryDump}</pre></div>`;
+    previewContainer.style.display = 'block';
+   };
+   img.src = url;
+  } else {
+   console.log('[displayFileContent] Displaying image directly');
+   previewContainer.innerHTML = `<img src="${url}" class="file-preview" alt="${file.name}">`;
+   previewContainer.style.display = 'block';
+  }
  } else if(file.name.endsWith('.json')) {
+  console.log('[displayFileContent] Processing as JSON');
   const textContent = new TextDecoder().decode(file.data);
   previewContainer.innerHTML = formatJSON(textContent);
   previewContainer.style.display = 'block';
  } else if(isTextFile(file.name)) {
+  console.log('[displayFileContent] Processing as text file');
   const textContent = new TextDecoder().decode(file.data);
   previewContainer.innerHTML = `<div class="file-content">${textContent}</div>`;
   previewContainer.style.display = 'block';
+ } else {
+  console.log('[displayFileContent] File type not handled:', file.name);
  }
 }
 
